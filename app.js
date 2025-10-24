@@ -199,29 +199,102 @@ function generateProblem(mode, op, max){
 }
 
 // Strategy hint text
-function getHint({a,b,op}){
-  if (op === '-'){
-    if (a >= 10 && b <= 10){
-      const tens = Math.floor(a/10)*10;
-      const rest = a - tens;
-      return `${a} is ${tens} and ${rest}. Take away ${b}: ${rest-b} left.`;
+function getHint({ a, b, op }) {
+  // SUBTRACTION HINTS
+  if (op === '-') {
+
+    // CASE A: both numbers under or equal to 10 and b < a
+    // Student is likely still in "counting back" territory
+    // Example: 9 - 4
+    if (a <= 10 && b < a) {
+      // We teach counting down, not formal regroup
+      return `Start at ${a}. Count back ${b} steps. Where do you land?`;
     }
-    if (a <= 10 && b < a){
-      return `Start at ${a}, count back ${b}.`;
+
+    // CASE B: subtracting a big chunk (like 17 - 12)
+    // Strategy: take away 10 first, then take away the rest
+    // We'll call "the rest" (b - 10) if b is 10 or more
+    if (b >= 10 && b < a) {
+      const extra = b - 10;
+      if (extra > 0) {
+        return `Take away 10 first. Then take away ${extra} more. How many are left after both steps?`;
+      } else {
+        // b is exactly 10
+        return `Take away 10. How many are left?`;
+      }
     }
-    return `What’s left when you take ${b} away from ${a}?`;
+
+    // CASE C: a > 10 and b < a
+    // We want to use the “break apart to get to a friendly 10” idea.
+    // Example: 14 - 6.
+    // We think: go from 14 down to 10 (that used 4), then take away the rest (2).
+    if (a > 10 && b < a) {
+      const tens = Math.floor(a / 10) * 10; // e.g. 14 -> 10
+      const distanceToTen = a - tens;      // how far from a down to that friendly 10
+      const stillNeed = b - distanceToTen; // how much more to remove after hitting 10
+
+      // If we can subtract just from the "ones" part without going past 0:
+      // Example: 14 - 3. Ones is 4, and 4 >= 3.
+      if (distanceToTen >= b) {
+        // This reads: "14 is 10 and 4. Take 3 from the 4. Then put 10 with what's left."
+        return `${a} is ${tens} and ${distanceToTen}. Take away ${b} from the ${distanceToTen}. Then put the ${tens} with what is left.`;
+      }
+
+      // Otherwise we need a two-step subtraction using 10 as an in-between.
+      // Example: 14 - 6:
+      //   "Go from 14 down to 10. That used 4. You still need to take away 2 more from 10."
+      if (stillNeed > 0 && tens - stillNeed >= 0) {
+        return `Think of ${a} as ${tens} and ${distanceToTen}. First go down from ${a} to ${tens} (that used ${distanceToTen}). You still need to take away ${stillNeed} more from ${tens}.`;
+      }
+    }
+
+    // CASE D: generic fallback for subtraction
+    // For anything like 25 - 7, 30 - 18, etc. that doesn't hit a special case above
+    return `You have ${a}. You give away ${b}. Picture taking ${b} away. How many are left?`;
   }
 
-  if (a + b === 10) {
-    return `Make 10: ${a} + ${b} = 10`;
-  }
-  if (a < 10 && b < 10 && a + b > 10) {
-    return `Make 10 using ${10-a} from ${b}, then add what's left.`;
-  }
+  // ADDITION HINTS
+  // (op === '+')
+
+  // CASE 1: doubles (like 6 + 6)
+  // We teach "double" as a known fact pattern, but we won't say the answer.
   if (a === b) {
-    return `Double ${a}: ${a}+${a}=${a+b}.`;
+    return `Double ${a}. That means counting ${a} two times.`;
   }
-  return `Add ${a} and ${b}.`;
+
+  // We'll define some helpers for clarity
+  const bigger = Math.max(a, b);
+  const smaller = Math.min(a, b);
+
+  // CASE 2: both parts are 10 or less
+  // This is usually where the student is either counting all or counting on.
+  // We encourage "start at the bigger number and count up the smaller".
+  if (a <= 10 && b <= 10) {
+    // If the sum crosses 10 (like 8 + 5), we want to introduce "make 10".
+    if (a + b > 10) {
+      // classic make-10 language
+      return `Make 10 first. Take what you need to get to 10, then add the rest.`;
+    }
+
+    // Otherwise, standard "count up" language
+    return `Start at ${bigger}. Count up ${smaller} more. What number do you get?`;
+  }
+
+  // CASE 3: make a friendly 10 for larger numbers that are close to a 10 boundary
+  // e.g. 14 + 6 -> think "14 + 6 is like 14 + 6 = 20; you can see 14 needs 6 to reach 20"
+  // For a student with weak number sense, we don't want full place value terms,
+  // but we DO want them thinking in chunks of 10 or 20.
+  // We'll just say "push it to the next friendly number".
+  const nextFriendly10 = Math.ceil(bigger / 10) * 10; // next 10 up from bigger
+  const needToFriendly = nextFriendly10 - bigger;
+  // Only use this hint if it's reasonable (needToFriendly is positive and less than smaller,
+  // which means we can "use part of the smaller number" to get to that multiple of 10).
+  if (needToFriendly > 0 && needToFriendly < smaller) {
+    return `Build a friendly number. Use part of the smaller number to get from ${bigger} up to ${nextFriendly10}. Then add what is left.`;
+  }
+
+  // CASE 4: generic addition fallback
+  return `Put ${a} and ${b} together. Think about adding the smaller number onto the bigger number.`;
 }
 
 // Story wording for word mode
