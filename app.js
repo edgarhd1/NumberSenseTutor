@@ -1,18 +1,15 @@
-// NumberSense Tutor v3
-// Key updates:
-// - Enter now: grade AND immediately advance to a new problem
-// - No repeated scoring on the same problem
-// - Session history stored and displayed
-// - Session picker overlay on load
-// - Hint toggle removed; Hint button always available in controls
+// NumberSense Tutor v3.1
+// Fixes:
+// - modeSelect, opSelect, maxNumber now update state and generate correct problems
+// - newProblem() now reflects visual / word / decompose properly
+// - UI wiring for buttons and keyboard is set up after session start
 
-const SESSIONS_KEY = 'ns_sessions_v1'; // all sessions history
-// We'll store array of sessions. Each session = { history: [...], stats: {...}, createdAt, lastUsedAt }
-// The "current session" is last element of that array unless starting new
+const SESSIONS_KEY = 'ns_sessions_v1';
 
-// Grab elements
+// DOM helpers
 const $ = (id)=>document.getElementById(id);
 
+// Elements
 const sessionOverlay   = $('sessionOverlay');
 const continueBtn      = $('continueSessionBtn');
 const newBtn           = $('newSessionBtn');
@@ -45,22 +42,22 @@ const statStreak       = $('statStreak');
 
 const historyBody      = $('historyBody');
 
-// internal runtime state
+// runtime state
 const state = {
-  mode:       'flash',        // flash | visual | word | decompose
-  op:         'mix',          // add | sub | mix
+  mode:       'flash',        // 'flash' | 'visual' | 'word' | 'decompose'
+  op:         'mix',          // 'add' | 'sub' | 'mix'
   max:        20,
-  current:    null,           // {type:'arith'|'decompose', ...}
+  current:    null,           // current problem object
   startTime:  null,
   timerInt:   null,
   hintUsed:   false
 };
 
-// currentSession is an object {history:[], stats:{correct,attempted,times[],streak}, createdAt,lastUsedAt}
+// current session object
 let currentSession = null;
 
 /* -------------------------
-   SESSION LOAD / SAVE
+   SESSION MANAGEMENT
 ------------------------- */
 
 function loadAllSessions(){
@@ -68,8 +65,7 @@ function loadAllSessions(){
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-    return [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -93,10 +89,8 @@ function createNewSession(){
   };
 }
 
-// call this whenever we update currentSession
 function persistSession(){
   let all = loadAllSessions();
-  // by convention, currentSession is the last session in the array
   if (!all.length){
     all = [currentSession];
   } else {
@@ -106,11 +100,10 @@ function persistSession(){
   saveAllSessions(all);
 }
 
-// choose session flow
+// Session choice buttons
 continueBtn.addEventListener('click', () => {
-  let all = loadAllSessions();
+  const all = loadAllSessions();
   if (!all.length){
-    // nothing to continue -> make a new session
     currentSession = createNewSession();
     persistSession();
   } else {
@@ -120,34 +113,37 @@ continueBtn.addEventListener('click', () => {
 });
 
 newBtn.addEventListener('click', () => {
-  let all = loadAllSessions();
+  const all = loadAllSessions();
   currentSession = createNewSession();
   all.push(currentSession);
   saveAllSessions(all);
   startApp();
 });
 
+/* -------------------------
+   APP STARTUP
+------------------------- */
+
 function startApp(){
-  // hide overlay, show app
+  // hide overlay, show app shell
   sessionOverlay.style.display = 'none';
   appShell.setAttribute('aria-hidden','false');
 
-  // ui wiring that depends on session being ready
+  // sync UI controls from our current state defaults
+  modeSelect.value = state.mode;
+  opSelect.value   = state.op;
+  maxNumber.value  = state.max;
+
+  // wire all UI events now that DOM is "live"
   wireUI();
 
-  // sync selects from defaults (we can later persist these too if needed)
-  modeSelect.value = state.mode;
-  opSelect.value = state.op;
-  maxNumber.value = state.max;
-
-  // render initial stats/history
+  // show stats / history from session
   renderStats();
   renderHistoryTable();
 
-  // create first problem
+  // get first problem
   newProblem();
 }
-
 
 /* -------------------------
    PROBLEM GENERATION
@@ -157,7 +153,9 @@ function randInt(min,max){
   return Math.floor(Math.random()*(max-min+1))+min;
 }
 
+// Builds one new math/decompose problem object
 function generateProblem(mode, op, max){
+  // Decompose mode: split N into parts
   if (mode === 'decompose'){
     const n = randInt(5, Math.max(6, max));
     const a = randInt(1, n-1);
@@ -170,6 +168,7 @@ function generateProblem(mode, op, max){
     };
   }
 
+  // Decide + or - for arithmetic modes
   const fullop = (op === 'mix')
     ? (Math.random() < 0.5 ? 'add' : 'sub')
     : op;
@@ -199,6 +198,7 @@ function generateProblem(mode, op, max){
   }
 }
 
+// Strategy hint text
 function getHint({a,b,op}){
   if (op === '-'){
     if (a >= 10 && b <= 10){
@@ -224,6 +224,7 @@ function getHint({a,b,op}){
   return `Add ${a} and ${b}.`;
 }
 
+// Story wording for word mode
 function makeStory(cur){
   const patterns = [
     ({a,b,op}) => op==='+' ?
@@ -236,43 +237,44 @@ function makeStory(cur){
       `A class reads ${a} pages on Monday and ${b} pages on Tuesday. How many pages total?` :
       `A baker made ${a} cupcakes and sold ${b}. How many are left?`
   ];
-  const p = patterns[Math.floor(Math.random()*patterns.length)];
-  return p(cur);
+  const pick = patterns[Math.floor(Math.random()*patterns.length)];
+  return pick(cur);
 }
 
-
 /* -------------------------
-   RENDER A NEW PROBLEM
+   RENDER / NEW PROBLEM
 ------------------------- */
 
 function newProblem(){
-  // build new problem
+  // build & store new problem
   const cur = generateProblem(state.mode, state.op, state.max);
   state.current = cur;
   state.startTime = Date.now();
   state.hintUsed = false;
 
-  // draw UI
+  // clear feedback and visuals
   feedback.textContent = '';
   hintText.textContent = '';
   visualArea.innerHTML = '';
 
-  // show either symbol problem or story problem (word mode)
+  // problem text depends on mode:
+  // - word mode -> story
+  // - other modes -> cur.text
   if (state.mode === 'word' && cur.type === 'arith') {
     problemArea.textContent = makeStory(cur);
   } else {
     problemArea.textContent = cur.text;
   }
 
-  // visual / ten-frame mode
+  // visual mode draws ten-frames (arith or decompose)
   if (state.mode === 'visual' && (cur.type === 'arith' || cur.type === 'decompose')) {
     renderVisual(cur);
   }
 
-  // configure input for this mode
+  // adjust input field type/placeholder for mode
   configureAnswerFieldForMode();
 
-  // reset and focus input
+  // reset input
   answerInput.value = '';
   answerInput.focus();
 
@@ -280,11 +282,8 @@ function newProblem(){
   startTimer();
 }
 
+// Build the visual (ten-frame style)
 function renderVisual(cur){
-  // We visualize:
-  // - addition: filled dots = a+b
-  // - subtraction: start with a dots and "cross out" b
-  // - decomposition: show n dots
   let n;
   if (cur.type === 'arith'){
     n = (cur.op === '+') ? (cur.a + cur.b) : cur.a;
@@ -311,7 +310,7 @@ function renderVisual(cur){
     container.appendChild(frame);
   }
 
-  // cross out for subtraction
+  // If subtraction, cross out b from the filled dots
   if (cur.type === 'arith' && cur.op === '-') {
     const totalCells = container.querySelectorAll('.cell.filled');
     for (let i=totalCells.length-1, rem=cur.b; rem>0 && i>=0; i--, rem--){
@@ -323,20 +322,19 @@ function renderVisual(cur){
   visualArea.appendChild(container);
 }
 
-
 /* -------------------------
    ANSWER CHECKING
 ------------------------- */
 
+// Accept "3+7", "3,7", "3 7"
 function parseDecompose(raw){
-  // accept "3+7", "3,7", "3 7"
   const m = raw.match(/(\d+)\s*(?:[,+\s])\s*(\d+)/);
   if(!m) return null;
   return [parseInt(m[1],10), parseInt(m[2],10)];
 }
 
+// Generate list like "1+14 • 2+13 • ..."
 function allDecomposePairs(n){
-  // returns ["1+14","2+13",...], no reversed duplicates
   const pairs=[];
   for(let a=1; a<=Math.floor(n/2); a++){
     const b=n-a;
@@ -346,10 +344,8 @@ function allDecomposePairs(n){
 }
 
 function checkAnswerAndAdvance(){
-  // If no current problem, do nothing
   if (!state.current) return;
 
-  // Stop the timer immediately to get final time
   stopTimer();
   const timeTaken = Math.round((Date.now()-state.startTime)/1000);
 
@@ -357,7 +353,7 @@ function checkAnswerAndAdvance(){
   const raw = answerInput.value.trim();
   if (!raw){
     feedback.textContent = 'Please type an answer first.';
-    startTimer(); // resume timing if they hadn't actually answered
+    startTimer(); // resume timer if they didn't actually answer
     return;
   }
 
@@ -369,7 +365,7 @@ function checkAnswerAndAdvance(){
     if(parts){
       const sum = parts[0] + parts[1];
       correct = (sum === cur.n);
-      correctAnswer = null; // we do not reveal decompose full answer set if wrong
+      correctAnswer = null;
     } else {
       feedback.textContent = 'Format example: 3+7 or 3,7';
       startTimer();
@@ -387,7 +383,7 @@ function checkAnswerAndAdvance(){
     }
   }
 
-  // Feedback text
+  // student-facing feedback
   if (correct){
     if (cur.type === 'decompose'){
       const pairs = allDecomposePairs(cur.n).join(' • ');
@@ -408,7 +404,7 @@ function checkAnswerAndAdvance(){
     }
   }
 
-  // Update session stats
+  // update session stats
   currentSession.stats.attempted++;
   currentSession.stats.times.push(timeTaken);
   if (correct){
@@ -418,7 +414,7 @@ function checkAnswerAndAdvance(){
     currentSession.stats.streak = 0;
   }
 
-  // Log this attempt in session history
+  // log the attempt for history table
   currentSession.history.push({
     problemText: displayTextForHistory(cur),
     studentAnswer: raw,
@@ -427,18 +423,16 @@ function checkAnswerAndAdvance(){
     hintUsed: state.hintUsed
   });
 
-  // Persist session to localStorage
   persistSession();
-
-  // Refresh stats + history UI
   renderStats();
   renderHistoryTable();
 
-  // Immediately start next problem so Enter can't "double count"
+  // immediately create next problem so Enter can't double count
   newProblem();
 }
 
 function displayTextForHistory(cur){
+  // what we show in the history column "Problem"
   if (state.mode === 'word' && cur.type === 'arith') {
     return makeStory(cur);
   }
@@ -453,17 +447,14 @@ function problemTextForHistory(cur){
   }
 }
 
-
 /* -------------------------
-   RENDER STATS + HISTORY
+   STATS + HISTORY UI
 ------------------------- */
 
 function averageTime(times){
   if (!times.length) return 0;
   const sum = times.reduce((a,b)=>a+b,0);
-  const avg = sum / times.length;
-  // round to nearest whole second for display
-  return Math.round(avg);
+  return Math.round(sum / times.length);
 }
 
 function renderStats(){
@@ -475,7 +466,6 @@ function renderStats(){
 
 function renderHistoryTable(){
   historyBody.innerHTML = '';
-  // latest attempt at the top
   const rows = [...currentSession.history].slice().reverse();
   for (const item of rows){
     const tr = document.createElement('tr');
@@ -506,7 +496,6 @@ function renderHistoryTable(){
   }
 }
 
-
 /* -------------------------
    HINTS
 ------------------------- */
@@ -517,36 +506,37 @@ function showHint(){
   state.hintUsed = true;
 
   if (cur.type === 'decompose'){
-    hintText.textContent = cur.hint || `Think of two numbers that add to ${cur.n}. Start small and work up.`;
+    hintText.textContent = cur.hint ||
+      `Think of two numbers that add to ${cur.n}. Start small and work up.`;
   } else if (cur.type === 'arith'){
-    hintText.textContent = cur.hint || 'Use what you know about tens to solve it.';
+    hintText.textContent = cur.hint ||
+      'Use what you know about tens to solve it.';
   } else {
     hintText.textContent = 'Think carefully about what the story is asking.';
   }
 }
 
-
 /* -------------------------
-   INPUT / TIMER / EVENTS
+   INPUT / TIMING / EVENTS
 ------------------------- */
 
 function configureAnswerFieldForMode(){
   if (state.current && state.current.type === 'decompose'){
-    answerInput.setAttribute('type', 'text');
-    answerInput.setAttribute('inputmode', 'numeric');
-    answerInput.setAttribute('pattern', '[0-9, +]*');
+    answerInput.setAttribute('type','text');
+    answerInput.setAttribute('inputmode','numeric');
+    answerInput.setAttribute('pattern','[0-9, +]*');
     answerInput.removeAttribute('step');
     answerInput.placeholder = 'e.g., 3+7 or 3,7';
   } else {
-    answerInput.setAttribute('type', 'number');
-    answerInput.setAttribute('inputmode', 'numeric');
-    answerInput.setAttribute('pattern', '[0-9]*');
-    answerInput.setAttribute('step', '1');
+    answerInput.setAttribute('type','number');
+    answerInput.setAttribute('inputmode','numeric');
+    answerInput.setAttribute('pattern','[0-9]*');
+    answerInput.setAttribute('step','1');
     answerInput.placeholder = 'Type answer';
   }
 }
 
-// sanitize pasted text
+// sanitize paste
 answerInput.addEventListener('paste',(e)=>{
   e.preventDefault();
   const text=(e.clipboardData||window.clipboardData).getData('text')||'';
@@ -556,11 +546,10 @@ answerInput.addEventListener('paste',(e)=>{
   document.execCommand('insertText', false, cleaned);
 });
 
-// block invalid typing, plus N shortcut
+// block invalid keys, N shortcut
 answerInput.addEventListener('keydown',(e)=>{
   if (e.key === 'Enter'){
-    // let form submit handle it
-    return;
+    return; // form submit will handle
   }
   if ((e.key === 'n' || e.key === 'N') &&
       !e.ctrlKey && !e.metaKey && !e.altKey && !e.altGraphKey){
@@ -580,62 +569,93 @@ answerInput.addEventListener('keydown',(e)=>{
   }
 });
 
-// Also allow N and H globally when not typing
-document.addEventListener('keydown',(e)=>{
-  if (e.target===answerInput) return;
-  if (e.key.toLowerCase()==='n'){
+// global N / H shortcuts when not typing
+function globalKeydown(e){
+  if (e.target === answerInput) return;
+  if (e.key.toLowerCase() === 'n'){
     newProblem();
   }
-  if (e.key.toLowerCase()==='h'){
+  if (e.key.toLowerCase() === 'h'){
     showHint();
   }
-});
+}
 
-// Answer form submit (Enter or Check click)
-answerForm.addEventListener('submit',(e)=>{
-  e.preventDefault();
-  checkAnswerAndAdvance();
-});
-
-// New problem button
-nextBtn.addEventListener('click',()=>{
-  newProblem();
-});
-
-// Hint button
-hintBtn.addEventListener('click',()=>{
-  showHint();
-});
-
-// Reset all data (wipe sessions)
-resetStatsBtn.addEventListener('click',()=>{
-  if (confirm('This will erase all saved sessions and progress. Are you sure?')){
-    localStorage.removeItem(SESSIONS_KEY);
-    // start brand new session
-    currentSession = createNewSession();
-    persistSession();
-    renderStats();
-    renderHistoryTable();
-    newProblem();
-  }
-});
-
-
-/* -------------------------
-   TIMER
-------------------------- */
-
+// timing
 function startTimer(){
   stopTimer();
   timerEl.textContent = 'Time: 0s';
   state.startTime = Date.now();
   state.timerInt = setInterval(()=>{
-    timerEl.textContent = 'Time: ' + Math.round((Date.now()-state.startTime)/1000) + 's';
+    timerEl.textContent = 'Time: ' +
+      Math.round((Date.now()-state.startTime)/1000) + 's';
   },300);
 }
 function stopTimer(){
-  if(state.timerInt){
+  if (state.timerInt){
     clearInterval(state.timerInt);
-    state.timerInt=null;
+    state.timerInt = null;
   }
+}
+
+/* -------------------------
+   WIRE UI
+------------------------- */
+
+function wireUI(){
+  // Only wire once. If wireUI somehow runs twice, ignore duplicates.
+  if (wireUI._wired) return;
+  wireUI._wired = true;
+
+  // answer form submit (Enter / Check)
+  answerForm.addEventListener('submit',(e)=>{
+    e.preventDefault();
+    checkAnswerAndAdvance();
+  });
+
+  // new problem button
+  nextBtn.addEventListener('click',()=>{
+    newProblem();
+  });
+
+  // hint button
+  hintBtn.addEventListener('click',()=>{
+    showHint();
+  });
+
+  // reset all data (wipe local sessions)
+  resetStatsBtn.addEventListener('click',()=>{
+    if (confirm('This will erase all saved sessions and progress. Are you sure?')){
+      localStorage.removeItem(SESSIONS_KEY);
+      currentSession = createNewSession();
+      persistSession();
+      renderStats();
+      renderHistoryTable();
+      newProblem();
+    }
+  });
+
+  // global keyboard shortcuts
+  document.addEventListener('keydown', globalKeydown);
+
+  // modeSelect change -> update state.mode, regenerate new problem
+  modeSelect.addEventListener('change', (e)=>{
+    state.mode = e.target.value;   // 'flash','visual','word','decompose'
+    newProblem();
+  });
+
+  // opSelect change -> update state.op, regenerate
+  opSelect.addEventListener('change', (e)=>{
+    state.op = e.target.value;     // 'mix','add','sub'
+    newProblem();
+  });
+
+  // maxNumber change -> clamp and regenerate
+  maxNumber.addEventListener('change', (e)=>{
+    let v = parseInt(e.target.value,10);
+    if (!Number.isFinite(v)) v = 20;
+    v = Math.max(5, Math.min(100, v));
+    state.max = v;
+    maxNumber.value = v;
+    newProblem();
+  });
 }
