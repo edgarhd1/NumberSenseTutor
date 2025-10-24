@@ -233,8 +233,8 @@ function generateProblem(mode, op, max){
     return {
       type:'decompose',
       n,
-      text:`Split ${n} into two parts`,
-      hint:`Think of two numbers that add to ${n}. Try pairs like 1 + ${n-1}, 2 + ${n-2}, …`
+      text: `Split ${n} into two whole-number parts (like 2+3)`,
+      hint:`Find two whole numbers that add to ${n}. Start small and build up.`
     };
   }
 
@@ -669,7 +669,7 @@ function configureAnswerFieldForMode(){
     answerInput.setAttribute('inputmode','numeric');
     answerInput.setAttribute('pattern','[0-9, +]*');
     answerInput.removeAttribute('step');
-    answerInput.placeholder = 'e.g., 3+7 or 3,7';
+    answerInput.placeholder = 'Type two whole numbers, like 2+3';
   } else {
     answerInput.setAttribute('type','number');
     answerInput.setAttribute('inputmode','numeric');
