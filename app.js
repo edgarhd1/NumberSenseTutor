@@ -27,8 +27,9 @@ const answerForm       = $('answerForm');
 const answerInput      = $('answerInput');
 const checkBtn         = $('checkBtn');
 
-const nextBtn          = $('nextBtn');
-const resetStatsBtn    = $('resetStats');
+const nextBtn             = $('nextBtn');
+const resetStatsBtn       = $('resetStats');
+const downloadSessionBtn  = $('downloadSessionBtn');
 
 const hintBtn          = $('hintBtn');
 const hintText         = $('hintText');
@@ -140,6 +141,75 @@ function startApp(){
   // show stats / history from session
   renderStats();
   renderHistoryTable();
+
+  // Turn currentSession.history into a CSV string and trigger a download
+function downloadSessionCSV() {
+  if (!currentSession) {
+    alert('No session loaded.');
+    return;
+  }
+
+  const rows = currentSession.history || [];
+  if (!rows.length) {
+    alert('No attempts in this session yet.');
+    return;
+  }
+
+  // CSV header
+  const header = [
+    'Problem',
+    'StudentAnswer',
+    'Correct',
+    'TimeSeconds',
+    'HintUsed',
+    'Timestamp'
+  ];
+
+  // Map each attempt into a CSV-safe row
+  // We'll include a timestamp per row using Date(...) for teacher reference
+  const dataRows = rows.map(item => {
+    // Clean commas/quotes for CSV safety
+    const clean = (val) => {
+      if (val === null || val === undefined) return '';
+      const str = String(val);
+      // wrap in quotes if it contains comma or quote
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    return [
+      clean(item.problemText),
+      clean(item.studentAnswer),
+      clean(item.correct ? 'Yes' : 'No'),
+      clean(item.timeTaken),
+      clean(item.hintUsed ? 'Yes' : 'No'),
+      clean(new Date().toISOString()) // you could store per-attempt timestamp later if you want
+    ].join(',');
+  });
+
+  const csvString = [header.join(','), ...dataRows].join('\n');
+
+  // Create a blob and a temporary download link
+  const blob = new Blob([csvString], { type: 'text/csv' });
+
+  // Generate a filename with a date stamp so you can keep copies over time
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth()+1).padStart(2,'0');
+  const dd = String(now.getDate()).padStart(2,'0');
+  const fileName = `numbersense_session_${yyyy}-${mm}-${dd}.csv`;
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
   // get first problem
   newProblem();
@@ -693,6 +763,11 @@ function wireUI(){
   // hint button
   hintBtn.addEventListener('click',()=>{
     showHint();
+  });
+
+  // download session data as CSV
+  downloadSessionBtn.addEventListener('click', () => {
+    downloadSessionCSV();
   });
 
   // reset all data (wipe local sessions)

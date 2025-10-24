@@ -90,15 +90,22 @@
     <div style="height:12px"></div>
 
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-        <strong>Session Progress</strong>
-        <div class="stats">
-          <div class="stat sm">Correct: <span id="statCorrect">0</span></div>
-          <div class="stat sm">Attempted: <span id="statAttempted">0</span></div>
-          <div class="stat sm">Avg time (s): <span id="statAvgTime">0</span></div>
-          <div class="stat sm">Streak: <span id="statStreak">0</span></div>
-        </div>
-      </div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;width:100%">
+  <div style="display:flex;flex-direction:column;gap:6px;min-width:140px">
+    <strong>Session Progress</strong>
+    <button id="downloadSessionBtn" class="secondary" type="button" title="Download this session data as CSV">
+      Download Session Data
+    </button>
+  </div>
+
+  <div class="stats">
+    <div class="stat sm">Correct: <span id="statCorrect">0</span></div>
+    <div class="stat sm">Attempted: <span id="statAttempted">0</span></div>
+    <div class="stat sm">Avg time (s): <span id="statAvgTime">0</span></div>
+    <div class="stat sm">Streak: <span id="statStreak">0</span></div>
+  </div>
+</div>
+
 
       <!-- History table -->
       <div class="history-wrap">
