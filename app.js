@@ -233,7 +233,7 @@ function generateProblem(mode, op, max){
     return {
       type:'decompose',
       n,
-      text: `Split ${n} into two whole-number parts (like 2+3)`,
+      text: `Split ${n} into two whole-number parts.`,
       hint:`Find two whole numbers that add to ${n}. Start small and build up.`
     };
   }
